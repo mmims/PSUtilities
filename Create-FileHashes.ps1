@@ -1,3 +1,4 @@
+[CmdletBinding()]
 param(
     [ValidateSet('SHA1', 'SHA256', 'SHA384', 'SHA512', 'MACTripleDES', 'MD5', 'RIPEMD160')]
     [string]$Algorithm = 'SHA256',
@@ -9,6 +10,10 @@ param(
     [string]$Path = (Get-Location).Path,
     [switch]$Recurse
 )
+
+if ($MyInvocation.InvocationName -ne '.') {
+  Create-FileHashes @PSBoundParameters
+}
 
 function Create-FileHashes {
     [CmdletBinding()]
@@ -82,8 +87,4 @@ function Create-FileHashes {
         $hashesJson | Out-File -LiteralPath $OutFile -Encoding utf8
         Write-Host "Verification file written [$(Resolve-Path $OutFile -Relative)]"
     }
-}
-
-if ($MyInvocation.InvocationName -ne '.') {
-    & Create-FileHashes @PSBoundParameters
 }

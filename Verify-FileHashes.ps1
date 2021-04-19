@@ -1,3 +1,4 @@
+[CmdletBinding()]
 param(
     [Parameter(Position=0)]
     [string]$Path = (Get-Location).Path,
@@ -5,8 +6,14 @@ param(
     [switch]$IgnoreMissing
 )
 
+$isDotsourced = $true
+if ($MyInvocation.InvocationName -ne '.') {
+    $isDotsourced = $false
+    Verify-FileHashes @PSBoundParameters
+}
 
 function Verify-FileHashes {
+    [CmdletBinding()]
     param(
         [Parameter(Position=0)]
         [string]$Path = (Get-Location).Path,
@@ -14,6 +21,15 @@ function Verify-FileHashes {
         [switch]$IgnoreMissing
     )
 
+    function ReturnOrExit {
+        param (
+            [int]$ExitCode
+        )
+        if (!$isDotsourced) {
+            exit $ExitCode
+        }
+        return
+    }
     $Path = Resolve-Path $Path
 
     if ([string]::IsNullOrEmpty($VerifyFile)) {
@@ -27,7 +43,7 @@ function Verify-FileHashes {
         }
         if ([string]::IsNullOrEmpty($VerifyFile)) {
             Write-Warning "No verification file detected [$Path]"
-            exit 1
+            Invoke-Expression (ReturnOrExit 1)
         }
     } else {
         $VerifyFile = Resolve-Path $VerifyFile
@@ -60,6 +76,7 @@ function Verify-FileHashes {
     }
     catch {
         Write-Error "Invalid verification file [$VerifyFile]"
+        Invoke-Expression (ReturnOrExit -1)
     }
 
     Push-Location $Path
@@ -104,7 +121,7 @@ function Verify-FileHashes {
     }
     catch {
         Write-Error $_
-        return
+        Invoke-Expression (ReturnOrExit -1)
     } finally {
         Write-Progress -Activity 'Processing files' -Completed
     }
@@ -214,12 +231,8 @@ function Verify-FileHashes {
 
     if (($invalid.Count -gt 0) -or (!$IgnoreMissing -and ($missing.Count -gt 0))) {
       Write-Host "Verification ${RED}FAILED${RESET} [$(Resolve-Path $VerifyFile -Relative)]"
-      return -1
+      return ReturnOrExit -1
     }
     Write-Host "Verification ${GREEN}PASSED${RESET} [$(Resolve-Path $VerifyFile -Relative)]"
-    return 0
-}
-
-if ($MyInvocation.InvocationName -ne '.') {
-    exit (& Verify-FileHashes @PSBoundParameters)
+    return ReturnOrExit 0
 }
