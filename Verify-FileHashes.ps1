@@ -1,3 +1,25 @@
+<#
+    .SYNOPSIS
+    Verifies a checksum file for all the files in the specified path.
+
+    .PARAMETER Path
+    Specifies the path of a directory to the files that need to be verified.
+
+    .PARAMETER VerifyFile
+    Specifies the name of the checksum file to verify. "<DirectoryName>.<Algorithm>" is the default.
+
+    .PARAMETER IgnoreMissing
+    Specifies whether missing files should be ignored during verification.
+
+    .INPUTS
+    None. You cannot pipe objects to Verify-FileHashes.
+
+    .OUTPUTS
+    Integer. Returns exit code for verification.
+
+    .LINK
+    Create-FileHashes
+#>
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
@@ -9,10 +31,31 @@ param(
 $isDotsourced = $true
 if ($MyInvocation.InvocationName -ne '.') {
     $isDotsourced = $false
-    Verify-FileHashes @PSBoundParameters
 }
 
 function Verify-FileHashes {
+    <#
+      .SYNOPSIS
+      Verifies a checksum file for all the files in the specified path.
+
+      .PARAMETER Path
+      Specifies the path of a directory to the files that need to be verified.
+
+      .PARAMETER VerifyFile
+      Specifies the name of the checksum file to verify. "<DirectoryName>.<Algorithm>" is the default.
+
+      .PARAMETER IgnoreMissing
+      Specifies whether missing files should be ignored during verification.
+
+      .INPUTS
+      None. You cannot pipe objects to Verify-FileHashes.
+
+      .OUTPUTS
+      None.
+
+      .LINK
+      Create-FileHashes
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Position=0)]
@@ -57,20 +100,18 @@ function Verify-FileHashes {
                 Write-Warning "Invalid verification file; unable to find '$prop' property [$VerifyFile]"
             }
         }
-        $hashes = @{}
-        foreach ($prop in $verifyObject.PSObject.Properties.Name) {
+        [array]$hashes = foreach ($prop in $verifyObject.PSObject.Properties.Name) {
             if ($prop -eq 'Files') {
-                $hashes[$prop] = @()
-                foreach ($file in $verifyObject.$prop) {
+                @(foreach ($file in $verifyObject.$prop) {
                     $info = @{}
                     foreach ($fprop in $file.PSObject.Properties.Name) {
                         $info[$fprop] = $file.$fprop
                     }
                     $info['Status'] = 'Missing'
-                    $hashes[$prop] += $info
-                }
+                    $info
+                })
             } else {
-                $hashes[$prop] = $verifyObject.$prop
+                $verifyObject.$prop
             }
         }
     }
@@ -80,7 +121,7 @@ function Verify-FileHashes {
     }
 
     Push-Location $Path
-    $files = Get-ChildItem -Path:$Path -File -Recurse
+    $files = Get-ChildItem -Path:$Path -File -Force -Recurse
 
     Write-Progress -Activity 'Processing files'
     $completed = 0
@@ -114,7 +155,7 @@ function Verify-FileHashes {
                 $fileInfo.Path = $relativePath
                 $fileInfo.VerifyDate = [string]$file.LastWriteTime.GetDateTimeFormats('o')
                 $fileInfo.VerifySize = $file.Length
-                $hashes.Files += $fileInfo
+                $hashes.Files.Add($fileInfo)
             }
             $completed++
         }
@@ -235,4 +276,8 @@ function Verify-FileHashes {
     }
     Write-Host "Verification ${GREEN}PASSED${RESET} [$(Resolve-Path $VerifyFile -Relative)]"
     return ReturnOrExit 0
+}
+
+if ($MyInvocation.InvocationName -ne '.') {
+  Verify-FileHashes @PSBoundParameters
 }
