@@ -118,8 +118,7 @@ function Create-FileHashes {
     Write-Progress -Activity 'Processing files'
     $completed = 0
     try {
-        $fileInfo = @()
-        foreach ($file in $files) {
+        $fileInfo = @(foreach ($file in $files) {
             Write-Progress -Activity 'Processing files' -Status "$completed of $($files.Length)" -PercentComplete ($completed/$files.Length*100) -CurrentOperation $file.Name
             $info = @{
                 Path = Resolve-Path $file.FullName -Relative
@@ -128,8 +127,8 @@ function Create-FileHashes {
                 Size = $file.Length
             }
             $completed++
-            $fileInfo += $info
-        }
+            $info
+        })
     }
     catch {
         Write-Error $_
@@ -143,6 +142,7 @@ function Create-FileHashes {
         Algorithm = $Algorithm
         Date = Get-Date -Format o
         Files = $fileInfo
+        HiddenFiles = $Force.IsPresent
         TotalFiles = $fileInfo.Length
         OriginalLocation = $Path
     }

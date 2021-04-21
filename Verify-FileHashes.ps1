@@ -22,6 +22,8 @@
 #>
 [CmdletBinding()]
 param(
+    [switch]$All,
+    [switch]$Force,
     [Parameter(Position=0)]
     [string]$Path = (Get-Location).Path,
     [string]$VerifyFile,
@@ -37,6 +39,12 @@ function Verify-FileHashes {
     <#
       .SYNOPSIS
       Verifies a checksum file for all the files in the specified path.
+
+      .PARAMETER All
+      Include all files in the path in the results not just those defined in the checksum file.
+
+      .PARAMETER Force
+      Allow hidden or system files to be included in the verification. Defaults to HiddenFiles value of checksum file.
 
       .PARAMETER Path
       Specifies the path of a directory to the files that need to be verified.
@@ -58,6 +66,8 @@ function Verify-FileHashes {
     #>
     [CmdletBinding()]
     param(
+        [switch]$All,
+        [switch]$Force,
         [Parameter(Position=0)]
         [string]$Path = (Get-Location).Path,
         [string]$VerifyFile,
@@ -94,25 +104,14 @@ function Verify-FileHashes {
 
     try {
         $verifyObject = Get-Content $VerifyFile | ConvertFrom-Json
-        $props = @('Date', 'OriginalLocation', 'Files', 'Algorithm', 'TotalFiles')
+        $props = @('Date', 'OriginalLocation', 'Files', 'Algorithm', 'TotalFiles', 'HiddenFiles')
         foreach ($prop in $props) {
             if (![bool]($verifyObject.PSObject.Properties | Where-Object { $_.Name -eq $prop })) {
                 Write-Warning "Invalid verification file; unable to find '$prop' property [$VerifyFile]"
             }
         }
-        [array]$hashes = foreach ($prop in $verifyObject.PSObject.Properties.Name) {
-            if ($prop -eq 'Files') {
-                @(foreach ($file in $verifyObject.$prop) {
-                    $info = @{}
-                    foreach ($fprop in $file.PSObject.Properties.Name) {
-                        $info[$fprop] = $file.$fprop
-                    }
-                    $info['Status'] = 'Missing'
-                    $info
-                })
-            } else {
-                $verifyObject.$prop
-            }
+        if (-not $Force.IsPresent) {
+            $Force = $verifyObject.HiddenFiles
         }
     }
     catch {
@@ -121,42 +120,51 @@ function Verify-FileHashes {
     }
 
     Push-Location $Path
-    $files = Get-ChildItem -Path:$Path -File -Force -Recurse
 
-    Write-Progress -Activity 'Processing files'
+    $verified = [System.Collections.Generic.List[Object]]@()
+    $invalid = [System.Collections.Generic.List[Object]]@()
+    $missing = [System.Collections.Generic.List[Object]]@()
     $completed = 0
-    try {
-        foreach ($file in $files) {
-            Write-Progress -Activity 'Processing files' -Status "$completed of $($files.Length)" -PercentComplete ($completed/$files.Length*100) -CurrentOperation $file.Name
 
-            $relativePath = Resolve-Path $file.FullName -Relative
-            if ($relativePath -eq (Resolve-Path $VerifyFile -Relative)) {
-                # Write-Warning "Verification file skipped [$relativePath]"
+    if ($All) {
+        Write-Progress -Activity 'Processing files' -Status 'Initializing...'
+        $untracked = [System.Collections.Generic.List[string]](Get-ChildItem -Path:$Path -File -Force:$Force -Recurse -Name)
+    }
+
+    try {
+        foreach ($file in $verifyObject.Files) {
+            Write-Progress -Activity 'Processing files' -Status "$completed of $($verifyObject.Files.Count)" -PercentComplete ($completed/$verifyObject.Files.Count*100) -CurrentOperation $file.Path
+
+            if ($file.Path -eq (Resolve-Path $VerifyFile -Relative)) {
                 $completed++
                 continue
             }
 
-            # Write-Host "relativePath: $relativePath"
-            $fileIndex = ([Collections.Generic.List[Object]]($hashes.Files)).FindIndex({ $args[0].Path -eq $relativePath })
-            if ($fileIndex -ge 0) {
-                # Write-Host "Matched file [$($hashes.Files[$fileIndex].Path)]"
-                $hashes.Files[$fileIndex].Status = 'Found'
-                $hashes.Files[$fileIndex].Verified = $false
-                $hashes.Files[$fileIndex].VerifyDate = [string]$file.LastWriteTime.GetDateTimeFormats('o')
-                $hashes.Files[$fileIndex].VerifySize = $file.Length
-                $hashes.Files[$fileIndex].VerifyHash = (Get-FileHash $file.FullName -Algorithm $hashes.Algorithm).Hash.toLower()
-                if ($hashes.Files[$fileIndex].Hash -eq $hashes.Files[$fileIndex].VerifyHash) {
-                    $hashes.Files[$fileIndex].Verified = $true
+            $fileInfo = @{
+                Date = $file.Date
+                Hash = $file.Hash
+                Path = $file.Path
+                Size = $file.Size
+            }
+
+            if (Test-Path $file.Path -PathType Leaf) {
+                $compFile = Get-ChildItem $file.Path -File -Force
+                $fileInfo.VerifyDate = [string]$compFile.LastWriteTime.GetDateTimeFormats('o')
+                $fileInfo.VerifySize = $compFile.Length
+                $fileInfo.VerifyHash = (Get-FileHash $compFile.FullName -Algorithm $verifyObject.Algorithm).Hash.toLower()
+                if ($file.Hash -eq $fileInfo.VerifyHash) {
+                    $verified.Add($fileInfo)
+                } else {
+                    $invalid.Add($fileInfo)
                 }
             } else {
-                # Write-Warning "Unmatched file [$relativePath]"
-                $fileInfo = @{}
-                $fileInfo.Status = 'Untracked'
-                $fileInfo.Path = $relativePath
-                $fileInfo.VerifyDate = [string]$file.LastWriteTime.GetDateTimeFormats('o')
-                $fileInfo.VerifySize = $file.Length
-                $hashes.Files.Add($fileInfo)
+                $missing.Add($fileInfo)
             }
+
+            if ($All) {
+               $null = $untracked.Remove($file.Path.Replace('.\',''))
+            }
+
             $completed++
         }
     }
@@ -168,11 +176,6 @@ function Verify-FileHashes {
     }
 
     Pop-Location
-
-    $verified = @($hashes.Files | Where-Object { ($_.Status -eq 'Found') -and $_.Verified })
-    $invalid = @($hashes.Files | Where-Object { ($_.Status -eq 'Found') -and !$_.Verified })
-    $missing = @($hashes.Files | Where-Object { $_.Status -eq 'Missing' })
-    $untracked = @($hashes.Files | Where-Object { $_.Status -eq 'Untracked' })
 
     Function Format-Bytes {
       Param
@@ -187,7 +190,6 @@ function Verify-FileHashes {
           $sizes = 'KB','MB','GB','TB','PB'
       }
       Process {
-          # New for loop
           for($x = 0;$x -lt $sizes.count; $x++){
               if ($number -lt "1$($sizes[$x])"){
                   if ($x -eq 0){
@@ -262,13 +264,17 @@ function Verify-FileHashes {
         }
     }
 
-    if ($untracked.Count -gt 0 -and $PSCmdlet.MyInvocation.BoundParameters['Verbose'].IsPresent) {
+    if ($All -and ($untracked.Count -gt 0) -and $PSCmdlet.MyInvocation.BoundParameters['Verbose'].IsPresent) {
         foreach ($item in $untracked) {
-            Write-Host "${GRAY}Untracked file [$($item.Path)]${RESET}"
+            Write-Host "${GRAY}Untracked file [$item]${RESET}"
         }
     }
 
-    Write-Host "`nVerified: ${GREEN}$($verified.Count)${RESET}  Invalid: ${RED}$($invalid.Count)${RESET}  Missing: ${YELLOW}$($missing.Count)${RESET}  Untracked: $ESC[90m$($untracked.Count)${RESET}"
+    $results = "`nVerified: ${GREEN}$($verified.Count)${RESET}  Invalid: ${RED}$($invalid.Count)${RESET}  Missing: ${YELLOW}$($missing.Count)${RESET}"
+    if ($All) {
+        $results += "  Untracked: $ESC[90m$($untracked.Count)${RESET}"
+    }
+    Write-Host $results
 
     if (($invalid.Count -gt 0) -or (!$IgnoreMissing -and ($missing.Count -gt 0))) {
       Write-Host "Verification ${RED}FAILED${RESET} [$(Resolve-Path $VerifyFile -Relative)]"
