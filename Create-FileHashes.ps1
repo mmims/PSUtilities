@@ -9,13 +9,15 @@
     Specifies the algorithm to use for hash values. "SHA256" is the default.
 
     .PARAMETER OutFile
-    Specifies the name of the checksum file to create. "<DirectoryName>.<Algorithm>" is the default.
+    Specifies the name of the checksum file to create. "<DirectoryName>.<Algorithm>"
+    is the default.
 
     .PARAMETER Recurse
     Specifies whether subdirectories in the Path should be included.
 
     .PARAMETER Depth
-    Specifies how many levels of subdirectories in the Path should be includede. Implies -Recurse.
+    Specifies how many levels of subdirectories in the Path should be included.
+    Implies -Recurse.
 
     .PARAMETER NoCompress
     Do not remove whitespace from the JSON output.
@@ -25,6 +27,16 @@
 
     .PARAMETER Force
     Allows hidden or system files to be included in the checksums file.
+
+    .PARAMETER Include
+    Specifies an array of one or more string patterns to be matched as the cmdlet
+    gets child items. Any matching item is included in the output. Enter a path
+    element or pattern, such as "*.txt". Wildcard characters are permitted.
+
+    .PARAMETER Exclude
+    Specifies an array of one or more string patterns to be matched as the cmdlet
+    gets child items. Any matching item is excluded from the output. Enter a path
+    element or pattern, such as *.txt or A*. Wildcard characters are accepted.
 
     .INPUTS
     None. You cannot pipe objects to Create-FileHashes.
@@ -40,7 +52,9 @@ param(
     [ValidateSet('SHA1', 'SHA256', 'SHA384', 'SHA512', 'MACTripleDES', 'MD5', 'RIPEMD160')]
     [string]$Algorithm = 'SHA256',
     [int]$Depth = -1,
+    [string[]]$Exclude,
     [switch]$Force,
+    [string[]]$Include,
     [switch]$NoCompress,
     [switch]$NoOut,
     [string]$OutFile,
@@ -61,13 +75,15 @@ function Create-FileHashes {
       Specifies the algorithm to use for hash values. "SHA256" is the default.
 
       .PARAMETER OutFile
-      Specifies the name of the checksum file to create. "<DirectoryName>.<Algorithm>" is the default.
+      Specifies the name of the checksum file to create. "<DirectoryName>.<Algorithm>"
+      is the default.
 
       .PARAMETER Recurse
       Specifies whether subdirectories in the Path should be included.
 
       .PARAMETER Depth
-      Specifies how many levels of subdirectories in the Path should be includede. Implies -Recurse.
+      Specifies how many levels of subdirectories in the Path should be included.
+      Implies -Recurse.
 
       .PARAMETER NoCompress
       Do not remove whitespace from the JSON output.
@@ -77,6 +93,16 @@ function Create-FileHashes {
 
       .PARAMETER Force
       Allows hidden or system files to be included in the checksums file.
+
+      .PARAMETER Include
+      Specifies an array of one or more string patterns to be matched as the cmdlet
+      gets child items. Any matching item is included in the output. Enter a path
+      element or pattern, such as "*.txt". Wildcard characters are permitted.
+
+      .PARAMETER Exclude
+      Specifies an array of one or more string patterns to be matched as the cmdlet
+      gets child items. Any matching item is excluded from the output. Enter a path
+      element or pattern, such as *.txt or A*. Wildcard characters are accepted.
 
       .INPUTS
       None. You cannot pipe objects to Create-FileHashes.
@@ -92,7 +118,9 @@ function Create-FileHashes {
         [ValidateSet('SHA1', 'SHA256', 'SHA384', 'SHA512', 'MACTripleDES', 'MD5', 'RIPEMD160')]
         [string]$Algorithm = 'SHA256',
         [int]$Depth = -1,
+        [string[]]$Exclude,
         [switch]$Force,
+        [string[]]$Include,
         [switch]$NoCompress,
         [switch]$NoOut,
         [string]$OutFile,
@@ -103,7 +131,7 @@ function Create-FileHashes {
 
     $Path = Resolve-Path $Path
 
-    if (!$NoOut -and ($OutFile -eq "")) {
+    if ($OutFile -eq "") {
         $OutFile = Join-Path $Path "$((Get-Item $Path).BaseName).$($Algorithm.ToLower())"
     }
 
@@ -120,6 +148,40 @@ function Create-FileHashes {
     try {
         $fileInfo = @(foreach ($file in $files) {
             Write-Progress -Activity 'Processing files' -Status "$completed of $($files.Length)" -PercentComplete ($completed/$files.Length*100) -CurrentOperation $file.Name
+
+            if ($file.FullName -eq $OutFile) {
+                $completed++
+                continue
+            }
+
+            if ($null -ne $Include) {
+                $match = $false
+                foreach($filter in $Include) {
+                    if($file.Name -like $filter) {
+                        $match = $true
+                        break
+                    }
+                }
+                if(!$match) {
+                    $completed++
+                    continue
+                }
+            }
+
+            if ($null -ne $Exclude) {
+                $match = $false
+                foreach($filter in $Exclude) {
+                    if($file.Name -like $filter) {
+                        $match = $true
+                        break
+                    }
+                }
+                if($match) {
+                    $completed++
+                    continue
+                }
+            }
+
             $info = @{
                 Path = Resolve-Path $file.FullName -Relative
                 Hash = $(Get-FileHash $file.FullName -Algorithm $Algorithm).Hash.ToLower()
