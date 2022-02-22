@@ -2,11 +2,20 @@
     .SYNOPSIS
     Verifies a checksum file for all the files in the specified path.
 
+    .PARAMETER All
+    Include all files in the path in the results not just those defined in the
+    checksum file.
+
+    .PARAMETER Force
+    Allow hidden or system files to be included in the verification. Defaults to
+    HiddenFiles value of checksum file.
+
     .PARAMETER Path
     Specifies the path of a directory to the files that need to be verified.
 
     .PARAMETER VerifyFile
-    Specifies the name of the checksum file to verify. "<DirectoryName>.<Algorithm>" is the default.
+    Specifies the name of the checksum file to verify. "<DirectoryName>.<Algorithm>"
+    is the default.
 
     .PARAMETER IgnoreMissing
     Specifies whether missing files should be ignored during verification.
@@ -41,16 +50,19 @@ function Verify-FileHashes {
       Verifies a checksum file for all the files in the specified path.
 
       .PARAMETER All
-      Include all files in the path in the results not just those defined in the checksum file.
+      Include all files in the path in the results not just those defined in the
+      checksum file.
 
       .PARAMETER Force
-      Allow hidden or system files to be included in the verification. Defaults to HiddenFiles value of checksum file.
+      Allow hidden or system files to be included in the verification. Defaults to
+      HiddenFiles value of checksum file.
 
       .PARAMETER Path
       Specifies the path of a directory to the files that need to be verified.
 
       .PARAMETER VerifyFile
-      Specifies the name of the checksum file to verify. "<DirectoryName>.<Algorithm>" is the default.
+      Specifies the name of the checksum file to verify. "<DirectoryName>.<Algorithm>"
+      is the default.
 
       .PARAMETER IgnoreMissing
       Specifies whether missing files should be ignored during verification.
@@ -213,6 +225,12 @@ function Verify-FileHashes {
       $GREEN = "$ESC[92m"
       $YELLOW = "$ESC[93m"
       $GRAY = "$ESC[90m"
+    }
+
+    if (($verified.Count -gt 0) -and $PSCmdlet.MyInvocation.BoundParameters['Verbose'].IsPresent) {
+        foreach ($item in $verified) {
+            Write-Host "${GREEN}Verified file [$($item.Path)]${RESET}"
+        }
     }
 
     if ($invalid.Count -gt 0) {
