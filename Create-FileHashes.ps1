@@ -38,6 +38,10 @@
     gets child items. Any matching item is excluded from the output. Enter a path
     element or pattern, such as *.txt or A*. Wildcard characters are accepted.
 
+    .PARAMETER Simple
+    Create simple output that contains the algorithm, hash, and filename. Simple
+    output cannot be verified by the Verify-FileHashes cmdlet.
+
     .INPUTS
     None. You cannot pipe objects to Create-FileHashes.
 
@@ -60,7 +64,8 @@ param(
     [string]$OutFile,
     [Parameter(Position=0)]
     [string]$Path = (Get-Location).Path,
-    [switch]$Recurse
+    [switch]$Recurse,
+    [switch]$Simple
 )
 
 function Create-FileHashes {
@@ -104,6 +109,10 @@ function Create-FileHashes {
       gets child items. Any matching item is excluded from the output. Enter a path
       element or pattern, such as *.txt or A*. Wildcard characters are accepted.
 
+      .PARAMETER Simple
+      Create simple output that contains the algorithm, hash, and filename. Simple
+      output cannot be verified by the Verify-FileHashes cmdlet.
+
       .INPUTS
       None. You cannot pipe objects to Create-FileHashes.
 
@@ -126,7 +135,8 @@ function Create-FileHashes {
         [string]$OutFile,
         [Parameter(Position=0)]
         [string]$Path = (Get-Location).Path,
-        [switch]$Recurse
+        [switch]$Recurse,
+        [switch]$Simple
     )
 
     $Path = Resolve-Path $Path
@@ -200,23 +210,50 @@ function Create-FileHashes {
         Pop-Location
     }
 
-    $hashes = @{
-        Algorithm = $Algorithm
-        Date = Get-Date -Format o
-        Files = $fileInfo
-        HiddenFiles = $Force.IsPresent
-        TotalFiles = $fileInfo.Length
-        OriginalLocation = $Path
-    }
+    if ($Simple) {
+        $header = @'
+\\
+\\ To verify the integrity of the file(s), calculate the checksum hash of the file(s)
+\\ and compare the result with the hash value(s) below. If the resulting hash value(s)
+\\ do not match exactly, the file(s) may be corrupted. You should discard the corrupt
+\\ file(s) and obtain a new copy.
+\\
+\\ You can calculate the checksum of the file(s) in a PowerShell console using the
+\\ following commands:
+\\   cd <Download Directory or CD\DVD Drive>
+'@
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine($header).AppendLine("\\   Get-FileHash .\* -Algorithm $Algorithm").AppendLine("\\").AppendLine()
 
-    $hashesJson = $hashes | ConvertTo-Json -Compress:$(!$NoCompress)
+        foreach ($info in $fileInfo) {
+            [void]$sb.AppendFormat("{0}  {1}  {2}", $Algorithm, $info.Hash, $info.Path).AppendLine()
+        }
 
-    if ($NoOut) {
-        $hashesJson
+        if ($NoOut) {
+            $sb.ToString()
+        } else {
+            $sb.ToString() | Out-File -LiteralPath $OutFile -Encoding utf8
+            Write-Host "Verification file written [$(Resolve-Path $OutFile -Relative)]"
+        }
     } else {
-        $hashesJson | Out-File -LiteralPath $OutFile -Encoding utf8
-        Write-Host "Verification file written [$(Resolve-Path $OutFile -Relative)]"
-    }
+        $hashes = @{
+            Algorithm = $Algorithm
+            Date = Get-Date -Format o
+            Files = $fileInfo
+            HiddenFiles = $Force.IsPresent
+            TotalFiles = $fileInfo.Length
+            OriginalLocation = $Path
+        }
+
+        $hashesJson = $hashes | ConvertTo-Json -Compress:$(!$NoCompress)
+
+        if ($NoOut) {
+            $hashesJson
+        } else {
+            $hashesJson | Out-File -LiteralPath $OutFile -Encoding utf8
+            Write-Host "Verification file written [$(Resolve-Path $OutFile -Relative)]"
+        }
+}
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
