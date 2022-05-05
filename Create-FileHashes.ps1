@@ -3,13 +3,13 @@
     Creates a checksum file for all the files in the specified path.
 
     .PARAMETER Path
-    Specifies the path of a directory to the files that need to be hashed.
+    Specifies the path to the file or directory that needs to be hashed.
 
     .PARAMETER Algorithm
     Specifies the algorithm to use for hash values. "SHA256" is the default.
 
     .PARAMETER OutFile
-    Specifies the name of the checksum file to create. "<DirectoryName>.<Algorithm>"
+    Specifies the name of the checksum file to create. "<Path>.<Algorithm>"
     is the default.
 
     .PARAMETER Recurse
@@ -74,13 +74,13 @@ function Create-FileHashes {
       Creates a checksum file for all the files in the specified path.
 
       .PARAMETER Path
-      Specifies the path of a directory to the files that need to be hashed.
+      Specifies the path to the file or directory that needs to be hashed.
 
       .PARAMETER Algorithm
       Specifies the algorithm to use for hash values. "SHA256" is the default.
 
       .PARAMETER OutFile
-      Specifies the name of the checksum file to create. "<DirectoryName>.<Algorithm>"
+      Specifies the name of the checksum file to create. "<Path>.<Algorithm>"
       is the default.
 
       .PARAMETER Recurse
@@ -140,9 +140,14 @@ function Create-FileHashes {
     )
 
     $Path = Resolve-Path $Path
+    $IsDirectory = if ((Get-Item $Path).PSIsContainer) { $true } else { $false }
 
     if ($OutFile -eq "") {
-        $OutFile = Join-Path $Path "$((Get-Item $Path).BaseName).$($Algorithm.ToLower())"
+        if ($IsDirectory) {
+            $OutFile = Join-Path $Path "$((Get-Item $Path).BaseName).$($Algorithm.ToLower())"
+        } else {
+            $OutFile = "$Path.$($Algorithm.ToLower())"
+        }
     }
 
     Write-Progress -Activity 'Processing files'
@@ -152,7 +157,7 @@ function Create-FileHashes {
       $files = Get-ChildItem -Path:$Path -File -Force:$Force -Recurse:$Recurse
     }
 
-    Push-Location $Path
+    if ($IsDirectory) { Push-Location $Path }
     Write-Progress -Activity 'Processing files'
     $completed = 0
     try {
@@ -207,7 +212,7 @@ function Create-FileHashes {
         return
     } finally {
         Write-Progress -Activity 'Processing files' -Completed
-        Pop-Location
+        if($IsDirectory) { Pop-Location }
     }
 
     if ($Simple) {
@@ -253,9 +258,10 @@ function Create-FileHashes {
             $hashesJson | Out-File -LiteralPath $OutFile -Encoding utf8
             Write-Host "Verification file written [$(Resolve-Path $OutFile -Relative)]"
         }
-}
+    }
 }
 
+# Function wrapper used when script is called directly and not dot sourced
 if ($MyInvocation.InvocationName -ne '.') {
   Create-FileHashes @PSBoundParameters
 }
