@@ -95,6 +95,17 @@ function Verify-FileHashes {
         }
         return
     }
+    
+    $ESC = [char]0x1b
+    $RESET = $RED = $GREEN = $YELLOW = $GRAY = ""
+    if ($Host.UI.SupportsVirtualTerminal) {
+      $RESET = "$ESC[0m"
+      $RED = "$ESC[91m"
+      $GREEN = "$ESC[92m"
+      $YELLOW = "$ESC[93m"
+      $GRAY = "$ESC[90m"
+    }
+
     $Path = Resolve-Path $Path
 
     if ([string]::IsNullOrEmpty($VerifyFile)) {
@@ -105,6 +116,12 @@ function Verify-FileHashes {
                 $VerifyFile = $testFile
                 break
             }
+
+            $testFile = Join-Path $Path "*.$($alg.ToLower())"
+            if (Test-Path $testFile) {
+                $VerifyFile = Resolve-Path $testFile
+                break
+            }
         }
         if ([string]::IsNullOrEmpty($VerifyFile)) {
             Write-Warning "No verification file detected [$Path]"
@@ -112,6 +129,9 @@ function Verify-FileHashes {
         }
     } else {
         $VerifyFile = Resolve-Path $VerifyFile
+    }
+    if ($PSCmdlet.MyInvocation.BoundParameters['Verbose'].IsPresent) {
+        Write-Host "VerifyFile: $VerifyFile"
     }
 
     try {
@@ -215,16 +235,6 @@ function Verify-FileHashes {
           }
       }
       End{}
-    }
-
-    $RESET = $RED = $GREEN = $YELLOW = $GRAY = ""
-    if ($Host.UI.SupportsVirtualTerminal) {
-      $ESC = [char]0x1b
-      $RESET = "$ESC[0m"
-      $RED = "$ESC[91m"
-      $GREEN = "$ESC[92m"
-      $YELLOW = "$ESC[93m"
-      $GRAY = "$ESC[90m"
     }
 
     if (($verified.Count -gt 0) -and $PSCmdlet.MyInvocation.BoundParameters['Verbose'].IsPresent) {
